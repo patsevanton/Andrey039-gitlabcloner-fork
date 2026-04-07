@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.5 (unreleased)
+
+### Добавлено
+- Исключение проектов и групп по ID — настройка `Exclude IDs` / `GITLAB_CLONER_EXCLUDE_IDS` (через запятую)
+
 ## v0.4
 
 ### Исправлено

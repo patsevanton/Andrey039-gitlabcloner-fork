@@ -42,6 +42,7 @@ Group ID: 123
 SSL verify (true/false) [true]: 
 Clone dir [.]: /path/to/dir
 Origin protocol (ssh/https) [ssh]: 
+Exclude IDs (comma-separated, optional): 
 ```
 
 ### Через переменные окружения
@@ -54,6 +55,7 @@ export GITLAB_CLONER_GROUP_ID=123
 export GITLAB_CLONER_DIR=/path/to/dir
 export GITLAB_CLONER_SSL_VERIFY=true
 export GITLAB_CLONER_ORIGIN_PROTO=ssh
+export GITLAB_CLONER_EXCLUDE_IDS=123,456
 
 ./gitlabcloner
 ```
@@ -71,6 +73,7 @@ export GITLAB_CLONER_ORIGIN_PROTO=ssh
 | `GITLAB_CLONER_DIR` | Директория для клонирования | `.` (текущая) |
 | `GITLAB_CLONER_SSL_VERIFY` | Проверка SSL-сертификата | `true` |
 | `GITLAB_CLONER_ORIGIN_PROTO` | Протокол origin: `ssh` или `https` | `ssh` |
+| `GITLAB_CLONER_EXCLUDE_IDS` | ID проектов/групп для пропуска (через запятую) | — |
 
 ## Поведение
 
@@ -78,3 +81,4 @@ export GITLAB_CLONER_ORIGIN_PROTO=ssh
 - Сохраняет структуру директорий по `path_with_namespace`.
 - Уже склонированные репозитории обновляются через `git pull --ff-only`.
 - Клонирование выполняется через HTTPS с токеном; после клона origin заменяется на SSH (или чистый HTTPS без токена) — токен не сохраняется в `.git/config`.
+- Проекты и группы из списка `GITLAB_CLONER_EXCLUDE_IDS` пропускаются (при пропуске группы её подгруппы и проекты тоже не клонируются).

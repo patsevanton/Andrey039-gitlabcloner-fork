@@ -11,12 +11,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"golang.org/x/term"
 )
 
 type Project struct {
+	ID                int    `json:"id"`
 	PathWithNamespace string `json:"path_with_namespace"`
 	HTTPURLToRepo     string `json:"http_url_to_repo"`
 	SSHURLToRepo      string `json:"ssh_url_to_repo"`
@@ -34,6 +36,7 @@ var (
 	cloneDir        string
 	sslVerify       bool
 	originProtocol  string
+	excludeIDs      map[int]struct{}
 	httpClient      *http.Client
 	stdinScanner    = bufio.NewScanner(os.Stdin)
 )
@@ -80,6 +83,25 @@ func envWithDefault(envKey, fallback string) string {
 	return fallback
 }
 
+func parseExcludeIDs(s string) map[int]struct{} {
+	result := make(map[int]struct{})
+	for _, part := range strings.Split(s, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if id, err := strconv.Atoi(part); err == nil {
+			result[id] = struct{}{}
+		}
+	}
+	return result
+}
+
+func isExcluded(id int) bool {
+	_, ok := excludeIDs[id]
+	return ok
+}
+
 func configure() {
 	defaultCloneDir, _ := os.Getwd()
 
@@ -97,6 +119,7 @@ func configure() {
 	sslVerify = strings.ToLower(sslVerifyStr) != "false"
 	cloneDir = prompt("Clone dir", envWithDefault("GITLAB_CLONER_DIR", defaultCloneDir))
 	originProtocol = strings.ToLower(prompt("Origin protocol (ssh/https)", envWithDefault("GITLAB_CLONER_ORIGIN_PROTO", "ssh")))
+	excludeIDs = parseExcludeIDs(prompt("Exclude IDs (comma-separated, optional)", envWithDefault("GITLAB_CLONER_EXCLUDE_IDS", "")))
 
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	if !sslVerify {
@@ -256,6 +279,10 @@ func cloneGroupProjects(groupID, parentDir, accumulatedPath string) error {
 		return fmt.Errorf("projects in group %s: %w", groupID, err)
 	}
 	for _, p := range projects {
+		if isExcluded(p.ID) {
+			fmt.Printf("[skip] project %d (%s)\n", p.ID, p.PathWithNamespace)
+			continue
+		}
 		relPath := strings.TrimPrefix(p.PathWithNamespace, accumulatedPath+"/")
 		clonePath := filepath.Join(parentDir, relPath)
 		if err := os.MkdirAll(clonePath, 0o755); err != nil {
@@ -275,6 +302,10 @@ func cloneGroupProjects(groupID, parentDir, accumulatedPath string) error {
 		return fmt.Errorf("subgroups of %s: %w", groupID, err)
 	}
 	for _, sg := range subgroups {
+		if isExcluded(sg.ID) {
+			fmt.Printf("[skip] group %d (%s)\n", sg.ID, sg.FullPath)
+			continue
+		}
 		relPath := strings.TrimPrefix(sg.FullPath, accumulatedPath+"/")
 		subDir := filepath.Join(parentDir, relPath)
 		if err := os.MkdirAll(subDir, 0o755); err != nil {
