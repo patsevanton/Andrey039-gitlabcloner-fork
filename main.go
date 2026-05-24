@@ -276,30 +276,32 @@ func cloneRepository(repoURL, clonePath, originURL string) error {
 func cloneGroupProjects(groupID, parentDir, accumulatedPath string) error {
 	projects, err := getProjects(groupID)
 	if err != nil {
-		return fmt.Errorf("projects in group %s: %w", groupID, err)
-	}
-	for _, p := range projects {
-		if isExcluded(p.ID) {
-			fmt.Printf("[skip] project %d (%s)\n", p.ID, p.PathWithNamespace)
-			continue
-		}
-		relPath := strings.TrimPrefix(p.PathWithNamespace, accumulatedPath+"/")
-		clonePath := filepath.Join(parentDir, relPath)
-		if err := os.MkdirAll(clonePath, 0o755); err != nil {
-			return err
-		}
-		originURL := p.SSHURLToRepo
-		if originProtocol == "https" {
-			originURL = p.HTTPURLToRepo
-		}
-		if err := cloneRepository(p.HTTPURLToRepo, clonePath, originURL); err != nil {
-			fmt.Fprintf(os.Stderr, "[error] %v\n", err)
+		fmt.Fprintf(os.Stderr, "[warn] projects in group %s: %v — пропускаем\n", groupID, err)
+	} else {
+		for _, p := range projects {
+			if isExcluded(p.ID) {
+				fmt.Printf("[skip] project %d (%s)\n", p.ID, p.PathWithNamespace)
+				continue
+			}
+			relPath := strings.TrimPrefix(p.PathWithNamespace, accumulatedPath+"/")
+			clonePath := filepath.Join(parentDir, relPath)
+			if err := os.MkdirAll(clonePath, 0o755); err != nil {
+				return err
+			}
+			originURL := p.SSHURLToRepo
+			if originProtocol == "https" {
+				originURL = p.HTTPURLToRepo
+			}
+			if err := cloneRepository(p.HTTPURLToRepo, clonePath, originURL); err != nil {
+				fmt.Fprintf(os.Stderr, "[error] %v\n", err)
+			}
 		}
 	}
 
 	subgroups, err := getSubgroups(groupID)
 	if err != nil {
-		return fmt.Errorf("subgroups of %s: %w", groupID, err)
+		fmt.Fprintf(os.Stderr, "[warn] subgroups of %s: %v — пропускаем\n", groupID, err)
+		return nil
 	}
 	for _, sg := range subgroups {
 		if isExcluded(sg.ID) {
@@ -312,7 +314,7 @@ func cloneGroupProjects(groupID, parentDir, accumulatedPath string) error {
 			return err
 		}
 		if err := cloneGroupProjects(fmt.Sprintf("%d", sg.ID), subDir, sg.FullPath); err != nil {
-			return err
+			fmt.Fprintf(os.Stderr, "[warn] group %d: %v — пропускаем\n", sg.ID, err)
 		}
 	}
 	return nil
