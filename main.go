@@ -126,6 +126,9 @@ func configure() {
 		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	}
 	httpClient = &http.Client{Transport: transport}
+
+	fmt.Fprintf(os.Stderr, "[debug] API base URL: %s\n", gitlabAPIURL)
+	fmt.Fprintf(os.Stderr, "[debug] Group ID: %s\n", groupID)
 }
 
 
@@ -276,30 +279,38 @@ func cloneRepository(repoURL, clonePath, originURL string) error {
 func cloneGroupProjects(groupID, parentDir, accumulatedPath string) error {
 	projects, err := getProjects(groupID)
 	if err != nil {
-		return fmt.Errorf("projects in group %s: %w", groupID, err)
-	}
-	for _, p := range projects {
-		if isExcluded(p.ID) {
-			fmt.Printf("[skip] project %d (%s)\n", p.ID, p.PathWithNamespace)
-			continue
+		errMsg := fmt.Sprintf("%v", err)
+		if strings.Contains(errMsg, "404") {
+			fmt.Fprintf(os.Stderr, "[warn] projects in group %s: %v\n", groupID, err)
+			fmt.Fprintf(os.Stderr, "[hint] Вероятно, у токена нет прав на просмотр проектов (нужен минимум Reporter). Проверьте роль токена в группе %s.\n", groupID)
+		} else {
+			fmt.Fprintf(os.Stderr, "[warn] projects in group %s: %v — пропускаем\n", groupID, err)
 		}
-		relPath := strings.TrimPrefix(p.PathWithNamespace, accumulatedPath+"/")
-		clonePath := filepath.Join(parentDir, relPath)
-		if err := os.MkdirAll(clonePath, 0o755); err != nil {
-			return err
-		}
-		originURL := p.SSHURLToRepo
-		if originProtocol == "https" {
-			originURL = p.HTTPURLToRepo
-		}
-		if err := cloneRepository(p.HTTPURLToRepo, clonePath, originURL); err != nil {
-			fmt.Fprintf(os.Stderr, "[error] %v\n", err)
+	} else {
+		for _, p := range projects {
+			if isExcluded(p.ID) {
+				fmt.Printf("[skip] project %d (%s)\n", p.ID, p.PathWithNamespace)
+				continue
+			}
+			relPath := strings.TrimPrefix(p.PathWithNamespace, accumulatedPath+"/")
+			clonePath := filepath.Join(parentDir, relPath)
+			if err := os.MkdirAll(clonePath, 0o755); err != nil {
+				return err
+			}
+			originURL := p.SSHURLToRepo
+			if originProtocol == "https" {
+				originURL = p.HTTPURLToRepo
+			}
+			if err := cloneRepository(p.HTTPURLToRepo, clonePath, originURL); err != nil {
+				fmt.Fprintf(os.Stderr, "[error] %v\n", err)
+			}
 		}
 	}
 
 	subgroups, err := getSubgroups(groupID)
 	if err != nil {
-		return fmt.Errorf("subgroups of %s: %w", groupID, err)
+		fmt.Fprintf(os.Stderr, "[warn] subgroups of %s: %v — пропускаем\n", groupID, err)
+		return nil
 	}
 	for _, sg := range subgroups {
 		if isExcluded(sg.ID) {
@@ -312,7 +323,7 @@ func cloneGroupProjects(groupID, parentDir, accumulatedPath string) error {
 			return err
 		}
 		if err := cloneGroupProjects(fmt.Sprintf("%d", sg.ID), subDir, sg.FullPath); err != nil {
-			return err
+			fmt.Fprintf(os.Stderr, "[warn] group %d: %v — пропускаем\n", sg.ID, err)
 		}
 	}
 	return nil
@@ -326,11 +337,41 @@ func main() {
 		os.Exit(1)
 	}
 
+	fmt.Fprintf(os.Stderr, "[info] Проверяем доступ к группе %s...\n", groupID)
+
 	rootGroup, err := getGroupInfo(groupID)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Ошибка получения группы: %v\n", err)
+		if strings.Contains(fmt.Sprintf("%v", err), "404") {
+			fmt.Fprintf(os.Stderr, "[hint] 404 на /groups/%s — проверьте:\n", groupID)
+			fmt.Fprintf(os.Stderr, "  1) Правильность Group ID (в URL группы: https://<gitlab>/<group-path>, ID виден в Settings → General)\n")
+			fmt.Fprintf(os.Stderr, "  2) Что токен имеет доступ к этой группе (минимум Reporter)\n")
+			fmt.Fprintf(os.Stderr, "  3) Что URL (%s) и API path корректны\n", gitlabAPIURL)
+		}
 		os.Exit(1)
 	}
+	fmt.Fprintf(os.Stderr, "[info] Группа найдена: %s (ID: %d)\n", rootGroup.FullPath, rootGroup.ID)
+
+	testProjects, testErr := getProjects(groupID)
+	if testErr != nil {
+		fmt.Fprintf(os.Stderr, "[warn] Не удалось получить список проектов: %v\n", testErr)
+		if strings.Contains(fmt.Sprintf("%v", testErr), "404") {
+			fmt.Fprintf(os.Stderr, "[hint] 404 на /groups/%s/projects при рабочем /groups/%s обычно означает:\n", groupID, groupID)
+			fmt.Fprintf(os.Stderr, "  → У токена нет прав на просмотр проектов. Нужна роль минимум Reporter в группе.\n")
+			fmt.Fprintf(os.Stderr, "  → Если проекты находятся только в подгруппах, это может быть нормально.\n")
+		}
+	} else {
+		fmt.Fprintf(os.Stderr, "[info] Найдено %d прямых проектов в группе\n", len(testProjects))
+	}
+
+	testSubgroups, testSubErr := getSubgroups(groupID)
+	if testSubErr != nil {
+		fmt.Fprintf(os.Stderr, "[warn] Не удалось получить подгруппы: %v\n", testSubErr)
+	} else {
+		fmt.Fprintf(os.Stderr, "[info] Найдено %d подгрупп\n", len(testSubgroups))
+	}
+
+	fmt.Fprintf(os.Stderr, "[info] Начинаем клонирование...\n\n")
 
 	// strip только родительский путь, чтобы имя самой группы осталось в структуре
 	parentPath := ""
