@@ -22,6 +22,7 @@ type Project struct {
 	PathWithNamespace string `json:"path_with_namespace"`
 	HTTPURLToRepo     string `json:"http_url_to_repo"`
 	SSHURLToRepo      string `json:"ssh_url_to_repo"`
+	Archived          bool   `json:"archived"`
 }
 
 type Group struct {
@@ -36,6 +37,8 @@ var (
 	cloneDir        string
 	sslVerify       bool
 	originProtocol  string
+	cloneArchived    bool
+	fullClone        bool
 	excludeIDs      map[int]struct{}
 	httpClient      *http.Client
 	stdinScanner    = bufio.NewScanner(os.Stdin)
@@ -117,6 +120,10 @@ func configure() {
 	groupID = prompt("Group ID", envWithDefault("GITLAB_CLONER_GROUP_ID", ""))
 	sslVerifyStr := prompt("SSL verify (true/false)", envWithDefault("GITLAB_CLONER_SSL_VERIFY", "true"))
 	sslVerify = strings.ToLower(sslVerifyStr) != "false"
+	cloneArchivedStr := prompt("Clone archived repos (true/false)", envWithDefault("GITLAB_CLONE_ARCHIVED", "false"))
+	cloneArchived = strings.ToLower(cloneArchivedStr) == "true"
+	fullCloneStr := prompt("Full clone (true/false)", envWithDefault("GITLAB_CLONE_FULL", "false"))
+	fullClone = strings.ToLower(fullCloneStr) == "true"
 	cloneDir = prompt("Clone dir", envWithDefault("GITLAB_CLONER_DIR", defaultCloneDir))
 	originProtocol = strings.ToLower(prompt("Origin protocol (ssh/https)", envWithDefault("GITLAB_CLONER_ORIGIN_PROTO", "ssh")))
 	excludeIDs = parseExcludeIDs(prompt("Exclude IDs (comma-separated, optional)", envWithDefault("GITLAB_CLONER_EXCLUDE_IDS", "")))
@@ -259,7 +266,12 @@ func cloneRepository(repoURL, clonePath, originURL string) error {
 		return pullRepository(clonePath)
 	}
 	authURL := strings.Replace(repoURL, "https://", fmt.Sprintf("https://oauth2:%s@", privateToken), 1)
-	cmd := exec.Command("git", "clone", authURL, clonePath)
+	args := []string{"clone"}
+	if !fullClone {
+		args = append(args, "--depth", "1")
+	}
+	args = append(args, authURL, clonePath)
+	cmd := exec.Command("git", args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Env = gitEnv()
@@ -290,6 +302,10 @@ func cloneGroupProjects(groupID, parentDir, accumulatedPath string) error {
 		for _, p := range projects {
 			if isExcluded(p.ID) {
 				fmt.Printf("[skip] project %d (%s)\n", p.ID, p.PathWithNamespace)
+				continue
+			}
+			if !cloneArchived && p.Archived {
+				fmt.Printf("[skip] archived project %d (%s)\n", p.ID, p.PathWithNamespace)
 				continue
 			}
 			relPath := strings.TrimPrefix(p.PathWithNamespace, accumulatedPath+"/")
