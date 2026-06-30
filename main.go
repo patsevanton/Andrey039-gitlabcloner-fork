@@ -38,8 +38,9 @@ var (
 	sslVerify       bool
 	originProtocol  string
 	cloneArchived    bool
-	fullClone        bool
-	excludeIDs      map[int]struct{}
+	fullClone                bool
+	checkoutDefaultBranch    bool
+	excludeIDs               map[int]struct{}
 	httpClient      *http.Client
 	stdinScanner    = bufio.NewScanner(os.Stdin)
 )
@@ -124,6 +125,8 @@ func configure() {
 	cloneArchived = strings.ToLower(cloneArchivedStr) == "true"
 	fullCloneStr := prompt("Full clone (true/false)", envWithDefault("GITLAB_CLONE_FULL", "false"))
 	fullClone = strings.ToLower(fullCloneStr) == "true"
+	checkoutDefaultBranchStr := prompt("Checkout default branch before pull (true/false)", envWithDefault("GITLAB_CLONER_CHECKOUT_DEFAULT_BRANCH", "false"))
+	checkoutDefaultBranch = strings.ToLower(checkoutDefaultBranchStr) == "true"
 	cloneDir = prompt("Clone dir", envWithDefault("GITLAB_CLONER_DIR", defaultCloneDir))
 	originProtocol = strings.ToLower(prompt("Origin protocol (ssh/https)", envWithDefault("GITLAB_CLONER_ORIGIN_PROTO", "ssh")))
 	excludeIDs = parseExcludeIDs(prompt("Exclude IDs (comma-separated, optional)", envWithDefault("GITLAB_CLONER_EXCLUDE_IDS", "")))
@@ -249,8 +252,24 @@ func gitEnv() []string {
 	return env
 }
 
+func checkoutToDefaultBranch(clonePath string) {
+	branches := []string{"main", "master", "develop"}
+	for _, branch := range branches {
+		cmd := exec.Command("git", "-C", clonePath, "checkout", branch)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		cmd.Env = gitEnv()
+		if err := cmd.Run(); err == nil {
+			return
+		}
+	}
+}
+
 func pullRepository(clonePath string) error {
 	fmt.Printf("[pull] %s\n", clonePath)
+	if checkoutDefaultBranch {
+		checkoutToDefaultBranch(clonePath)
+	}
 	cmd := exec.Command("git", "-C", clonePath, "pull", "--ff-only")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
