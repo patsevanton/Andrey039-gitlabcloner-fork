@@ -38,6 +38,7 @@ var (
 	sslVerify             bool
 	originProtocol        string
 	cloneArchived         bool
+	deleteArchivedLocal   bool
 	fullClone             bool
 	checkoutDefaultBranch bool
 	excludeIDs            map[int]struct{}
@@ -123,6 +124,8 @@ func configure() {
 	sslVerify = strings.ToLower(sslVerifyStr) != "false"
 	cloneArchivedStr := prompt("Clone archived repos (true/false)", envWithDefault("GITLAB_CLONE_ARCHIVED", "false"))
 	cloneArchived = strings.ToLower(cloneArchivedStr) == "true"
+	deleteArchivedLocalStr := prompt("Delete local archived repos (true/false)", envWithDefault("GITLAB_CLONER_DELETE_ARCHIVED_LOCAL", "false"))
+	deleteArchivedLocal = strings.ToLower(deleteArchivedLocalStr) == "true"
 	fullCloneStr := prompt("Full clone (true/false)", envWithDefault("GITLAB_CLONE_FULL", "false"))
 	fullClone = strings.ToLower(fullCloneStr) == "true"
 	checkoutDefaultBranchStr := prompt("Checkout default branch before pull (true/false)", envWithDefault("GITLAB_CLONER_CHECKOUT_DEFAULT_BRANCH", "false"))
@@ -322,12 +325,21 @@ func cloneGroupProjects(groupID, parentDir, accumulatedPath string) error {
 				fmt.Printf("[skip] project %d (%s)\n", p.ID, p.PathWithNamespace)
 				continue
 			}
+			relPath := strings.TrimPrefix(p.PathWithNamespace, accumulatedPath+"/")
+			clonePath := filepath.Join(parentDir, relPath)
+			if p.Archived && deleteArchivedLocal && !cloneArchived {
+				if _, err := os.Stat(filepath.Join(clonePath, ".git")); err == nil {
+					fmt.Printf("[delete] archived project %d (%s)\n", p.ID, p.PathWithNamespace)
+					if err := os.RemoveAll(clonePath); err != nil {
+						fmt.Fprintf(os.Stderr, "[error] remove %s: %v\n", clonePath, err)
+					}
+				}
+				continue
+			}
 			if !cloneArchived && p.Archived {
 				fmt.Printf("[skip] archived project %d (%s)\n", p.ID, p.PathWithNamespace)
 				continue
 			}
-			relPath := strings.TrimPrefix(p.PathWithNamespace, accumulatedPath+"/")
-			clonePath := filepath.Join(parentDir, relPath)
 			if err := os.MkdirAll(clonePath, 0o755); err != nil {
 				return err
 			}

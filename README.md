@@ -41,6 +41,7 @@ Token:
 Group ID: 123
 SSL verify (true/false) [true]: 
 Clone archived repos (true/false) [false]: 
+Delete local archived repos (true/false) [false]: 
 Full clone (true/false) [false]: 
 Checkout default branch before pull (true/false) [false]: 
 Clone dir [.]: /path/to/dir
@@ -60,6 +61,7 @@ export GITLAB_CLONER_SSL_VERIFY=true
 export GITLAB_CLONER_ORIGIN_PROTO=ssh
 export GITLAB_CLONER_EXCLUDE_IDS=123,456
 export GITLAB_CLONE_ARCHIVED=false
+export GITLAB_CLONER_DELETE_ARCHIVED_LOCAL=false
 export GITLAB_CLONE_FULL=false
 export GITLAB_CLONER_CHECKOUT_DEFAULT_BRANCH=false
 
@@ -81,6 +83,7 @@ export GITLAB_CLONER_CHECKOUT_DEFAULT_BRANCH=false
 | `GITLAB_CLONER_ORIGIN_PROTO` | Протокол origin: `ssh` или `https` | `ssh` |
 | `GITLAB_CLONER_EXCLUDE_IDS` | ID проектов/групп для пропуска (через запятую) | — |
 | `GITLAB_CLONE_ARCHIVED` | Клонировать архивированные проекты | `false` |
+| `GITLAB_CLONER_DELETE_ARCHIVED_LOCAL` | Удалять локальную копию архивированного проекта | `false` |
 | `GITLAB_CLONE_FULL` | Полное клонирование вместо shallow (depth=1) | `false` |
 | `GITLAB_CLONER_CHECKOUT_DEFAULT_BRANCH` | Checkout на ветку по умолчанию перед pull | `false` |
 
@@ -92,5 +95,6 @@ export GITLAB_CLONER_CHECKOUT_DEFAULT_BRANCH=false
 - Клонирование выполняется через HTTPS с токеном; после клона origin заменяется на SSH (или чистый HTTPS без токена) — токен не сохраняется в `.git/config`.
 - Проекты и группы из списка `GITLAB_CLONER_EXCLUDE_IDS` пропускаются (при пропуске группы её подгруппы и проекты тоже не клонируются).
 - Архивированные проекты пропускаются по умолчанию; для их клонирования установите `GITLAB_CLONE_ARCHIVED=true`.
+- При `GITLAB_CLONER_DELETE_ARCHIVED_LOCAL=true` локальная копия архивированного проекта (если она уже склонирована) удаляется.
 - По умолчанию используется shallow clone (`--depth 1`); для полного клонирования установите `GITLAB_CLONE_FULL=true`.
 - При `GITLAB_CLONER_CHECKOUT_DEFAULT_BRANCH=true` перед pull выполняется попытка checkout на ветку по умолчанию (main → master → develop).
